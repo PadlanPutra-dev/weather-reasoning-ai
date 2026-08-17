@@ -39,7 +39,6 @@ def get_weather_data():
 def normalize_weather_data(data):
 
     lokasi = data["lokasi"]
-
     weather_groups = data["data"][0]["cuaca"]
 
     weather_items = []
@@ -71,6 +70,7 @@ def normalize_weather_data(data):
             "precipitation": current.get("tp"),
             "wind_speed": current.get("ws"),
             "cloud_cover": current.get("tcc"),
+            "visibility": current.get("vs_text"),
             "condition": current.get("weather_desc")
         }
     }
