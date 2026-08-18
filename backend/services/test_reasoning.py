@@ -51,8 +51,9 @@ for scenario in scenarios:
         fuzzy_result=scenario["fuzzy"],
         precipitation=scenario["precipitation"],
         humidity=scenario["humidity"],
-        wind_speed=scenario["wind_speed"],
-        cloud_cover=scenario["cloud_cover"],
+        wind_speed_knots=scenario["wind_speed"],
+        ffx_category="sedang",
+        wave_height=1.0,
         weather_condition=scenario["condition"],
         fisherman_status=scenario["status"]
     )

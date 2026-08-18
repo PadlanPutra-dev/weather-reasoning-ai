@@ -1,19 +1,35 @@
 HYPOTHESES = {
     "H1": {
         "name": "Kondisi relatif aman",
-        "recommendation": "Nelayan dapat melaut atau beraktivitas seperti biasa."
+        "recommendation": (
+            "Nelayan dapat melaut dengan tetap mengikuti "
+            "informasi cuaca dan peringatan resmi BMKG."
+        )
     },
+
     "H2": {
         "name": "Kondisi perlu kewaspadaan",
-        "recommendation": "Nelayan dapat melaut dengan pembatasan, seperti durasi lebih singkat dan area dekat pantai."
+        "recommendation": (
+            "Nelayan dapat melaut dengan kewaspadaan lebih tinggi, "
+            "membatasi area dan durasi aktivitas."
+        )
     },
+
     "H3": {
         "name": "Kondisi tidak aman untuk berangkat",
-        "recommendation": "Nelayan disarankan menunda keberangkatan sampai kondisi cuaca membaik."
+        "recommendation": (
+            "Nelayan disarankan menunda keberangkatan "
+            "sampai kondisi cuaca dan laut membaik."
+        )
     },
+
     "H4": {
         "name": "Kondisi berbahaya saat di laut",
-        "recommendation": "Nelayan disarankan menghentikan aktivitas dan kembali ke daratan atau titik aman."
+        "recommendation": (
+            "Nelayan yang sudah berada di laut disarankan "
+            "mengurangi atau menghentikan aktivitas dan menuju "
+            "titik aman sesuai kondisi."
+        )
     }
 }
 
@@ -22,20 +38,47 @@ def calculate_reasoning(
     fuzzy_result,
     precipitation,
     humidity,
-    wind_speed,
-    cloud_cover,
-    weather_condition,
-    fisherman_status,
-    ffx_category=None,
-    wave_height=None,
-    wave_category=None,
-    lightning=None,
-    visibility_bad=None,
-    breaking_wave=None
+    wind_speed_knots,
+    ffx_category,
+    wave_height,
+    lightning=False,
+    visibility_bad=False,
+    breaking_wave=False,
+    sunshine_duration=None,
+    weather_condition="",
+    fisherman_status="belum_berangkat"
 ):
     """
-    Abductive Reasoning untuk menentukan kondisi keselamatan nelayan.
+    Abductive reasoning untuk menentukan kondisi keselamatan nelayan.
+
+    Hipotesis:
+
+    H1 = Kondisi relatif aman
+    H2 = Kondisi perlu kewaspadaan
+    H3 = Kondisi tidak aman untuk berangkat
+    H4 = Kondisi berbahaya saat di laut
+
+    Parameter utama:
+
+    - wind_speed_knots
+    - ffx_category
+    - wave_height
+    - lightning
+    - visibility_bad
+    - breaking_wave
+    - fisherman_status
+
+    Parameter pendukung:
+
+    - precipitation
+    - humidity
+    - fuzzy_result
+    - weather_condition
     """
+
+    # =========================================================
+    # NORMALISASI INPUT
+    # =========================================================
 
     scores = {
         "H1": 0,
@@ -46,280 +89,409 @@ def calculate_reasoning(
 
     evidence = []
 
-    classification = fuzzy_result.get(
-        "classification", ""
+    classification = str(
+        (fuzzy_result or {}).get(
+            "classification",
+            ""
+        )
     ).upper()
 
-    # =====================================================
-    # E1. HASIL FUZZY
-    # =====================================================
+    weather = str(
+        weather_condition or ""
+    ).strip().lower()
 
-    if classification in ["TIDAK_HUJAN", "AMAN"]:
-        scores["H1"] += 3
-        evidence.append(
-            "Hasil fuzzy menunjukkan kondisi relatif aman."
-        )
+    ffx = str(
+        ffx_category or ""
+    ).strip().lower()
 
-    elif classification in ["MENDUNG", "WASPADA"]:
-        scores["H2"] += 3
-        evidence.append(
-            "Hasil fuzzy menunjukkan kondisi perlu kewaspadaan."
-        )
+    try:
+        wind = float(wind_speed_knots or 0)
+    except (TypeError, ValueError):
+        wind = 0
 
-    elif classification in ["HUJAN", "TIDAK AMAN", "TIDAK_AMAN"]:
-        scores["H3"] += 4
-        evidence.append(
-            "Hasil fuzzy menunjukkan kondisi kurang aman."
-        )
+    try:
+        wave = float(wave_height or 0)
+    except (TypeError, ValueError):
+        wave = 0
 
-    elif classification == "EKSTREM":
-        scores["H3"] += 4
-        scores["H4"] += 3
-        evidence.append(
-            "Hasil fuzzy menunjukkan kondisi ekstrem."
-        )
+    try:
+        rain = float(precipitation or 0)
+    except (TypeError, ValueError):
+        rain = 0
 
-    # =====================================================
-    # E2. CURAH HUJAN
-    # =====================================================
+    try:
+        rh = float(humidity or 0)
+    except (TypeError, ValueError):
+        rh = 0
 
-    if precipitation is not None:
+    # Normalisasi status
+    fisherman_status = str(
+        fisherman_status or "belum_berangkat"
+    ).strip().lower()
 
-        if precipitation <= 1:
-            scores["H1"] += 2
-            evidence.append("Curah hujan rendah.")
+    if fisherman_status not in [
+        "belum_berangkat",
+        "sudah_melaut"
+    ]:
+        fisherman_status = "belum_berangkat"
 
-        elif precipitation <= 10:
-            scores["H2"] += 2
-            scores["H3"] += 1
-            evidence.append("Curah hujan sedang.")
-
-        else:
-            scores["H3"] += 3
-            scores["H4"] += 2
-            evidence.append("Curah hujan tinggi.")
-
-    # =====================================================
-    # E3. KECEPATAN ANGIN ATMOSFER
-    # =====================================================
-
-    if wind_speed is not None:
-
-        if wind_speed < 5:
-            scores["H1"] += 2
-            evidence.append(
-                "Kecepatan angin atmosfer relatif lemah."
-            )
-
-        elif wind_speed < 10:
-            scores["H2"] += 2
-            scores["H3"] += 1
-            evidence.append(
-                "Kecepatan angin atmosfer sedang."
-            )
-
-        else:
-            scores["H3"] += 3
-            scores["H4"] += 2
-            evidence.append(
-                "Kecepatan angin atmosfer kuat."
-            )
-
-    # =====================================================
-    # E4. ANGIN LAUT / FFX
-    # =====================================================
-
-    if ffx_category:
-
-        ffx = ffx_category.lower()
-
-        if ffx == "rendah":
-            scores["H1"] += 1
-            evidence.append(
-                "Kecepatan angin laut relatif rendah."
-            )
-
-        elif ffx == "sedang":
-            scores["H2"] += 2
-            evidence.append(
-                "Kecepatan angin laut berada pada kategori sedang."
-            )
-
-        elif ffx == "tinggi":
-            scores["H3"] += 3
-            scores["H4"] += 2
-            evidence.append(
-                "Kecepatan angin laut tinggi."
-            )
-
-    # =====================================================
-    # E5. TUTUPAN AWAN
-    # =====================================================
-
-    if cloud_cover is not None:
-
-        if cloud_cover >= 90 and precipitation > 10:
-            scores["H3"] += 1
-            evidence.append(
-                "Tutupan awan sangat tinggi disertai hujan."
-            )
-
-        elif cloud_cover >= 80:
-            scores["H2"] += 1
-            evidence.append(
-                "Tutupan awan tinggi."
-            )
-
-    # =====================================================
-    # E6. KELEMBAPAN
-    # =====================================================
-
-    if humidity is not None:
-
-        if humidity >= 85 and precipitation <= 1:
-            scores["H2"] += 1
-            evidence.append(
-                "Kelembapan tinggi meskipun curah hujan rendah."
-            )
-
-    # =====================================================
-    # E7. TINGGI GELOMBANG
-    # =====================================================
-
-    if wave_height is not None:
-
-        if wave_height < 1.25:
-            scores["H1"] += 2
-            evidence.append(
-                f"Tinggi gelombang relatif rendah ({wave_height} m)."
-            )
-
-        elif wave_height < 2.5:
-            scores["H2"] += 2
-            evidence.append(
-                f"Tinggi gelombang sedang ({wave_height} m)."
-            )
-
-        elif wave_height < 4:
-            scores["H3"] += 3
-            scores["H4"] += 1
-            evidence.append(
-                f"Tinggi gelombang tinggi ({wave_height} m)."
-            )
-
-        else:
-            scores["H4"] += 4
-            evidence.append(
-                f"Tinggi gelombang sangat tinggi ({wave_height} m)."
-            )
-
-    # =====================================================
-    # E8. KATEGORI GELOMBANG BMKG
-    # =====================================================
-
-    if wave_category:
-
-        wave_cat = wave_category.lower()
-
-        if wave_cat == "rendah":
-            scores["H1"] += 1
-
-        elif wave_cat == "sedang":
-            scores["H2"] += 1
-
-        elif wave_cat == "tinggi":
-            scores["H3"] += 2
-            evidence.append(
-                "BMKG mengategorikan gelombang sebagai tinggi."
-            )
-
-        elif wave_cat in ["sangat tinggi", "ekstrem"]:
-            scores["H4"] += 3
-            evidence.append(
-                "BMKG mengategorikan gelombang sebagai sangat tinggi."
-            )
-
-    # =====================================================
-    # E9. PETIR
-    # =====================================================
-
-    if lightning is True:
-        scores["H3"] += 3
-        scores["H4"] += 2
-        evidence.append(
-            "Terdapat indikasi petir."
-        )
-
-    # =====================================================
-    # E10. VISIBILITY
-    # =====================================================
-
-    if visibility_bad is True:
-        scores["H3"] += 2
-        scores["H4"] += 1
-        evidence.append(
-            "Visibilitas buruk dapat mengganggu navigasi."
-        )
-
-    # =====================================================
-    # E11. BREAKING WAVE
-    # =====================================================
-
-    if breaking_wave is True:
-        scores["H4"] += 4
-        evidence.append(
-            "Terdapat indikasi breaking wave yang berbahaya."
-        )
-
-    # =====================================================
-    # E12. STATUS NELAYAN
-    # =====================================================
+    # =========================================================
+    # STATUS NELAYAN
+    # =========================================================
 
     if fisherman_status == "sudah_melaut":
 
+        candidate_hypotheses = [
+            "H2",
+            "H4"
+        ]
+
         evidence.append(
-            "Nelayan sudah berada di laut."
+            "Nelayan sudah berada di laut sehingga sistem "
+            "mengevaluasi kondisi kewaspadaan atau bahaya."
         )
 
-        kondisi_buruk = (
-            scores["H3"] > scores["H1"]
-            or scores["H4"] > 0
-            or precipitation > 10
-            or wind_speed >= 10
-            or (wave_height is not None and wave_height >= 2.5)
-            or ffx_category == "tinggi"
-            or lightning is True
-            or breaking_wave is True
+    else:
+
+        candidate_hypotheses = [
+            "H1",
+            "H2",
+            "H3"
+        ]
+
+        evidence.append(
+            "Nelayan belum berangkat sehingga sistem "
+            "mengevaluasi keamanan untuk keputusan keberangkatan."
         )
 
-        if kondisi_buruk:
+    # =========================================================
+    # E1. KONDISI CUACA FUZZY
+    # =========================================================
+
+    if classification:
+
+        evidence.append(
+            f"Hasil klasifikasi fuzzy: {classification}."
+        )
+
+    if weather in [
+        "cerah",
+        "cerah berawan",
+        "tidak hujan",
+        "tidak_hujan"
+    ]:
+
+        # Cuaca atmosfer baik.
+        # Untuk kondisi sudah melaut, bukti ini tidak
+        # langsung membuat H2/H4 menjadi aman.
+        if fisherman_status == "belum_berangkat":
+            scores["H1"] += 1
+
+        evidence.append(
+            "Kondisi atmosfer relatif baik."
+        )
+
+    elif weather in [
+        "berawan",
+        "mendung"
+    ]:
+
+        scores["H2"] += 1
+
+        evidence.append(
+            "Kondisi atmosfer berawan atau mendung."
+        )
+
+    elif "hujan" in weather:
+
+        scores["H2"] += 2
+
+        evidence.append(
+            "Hujan terdeteksi pada kondisi atmosfer."
+        )
+
+    elif weather in [
+        "ekstrem",
+        "cuaca ekstrem",
+        "cuaca_ekstrem"
+    ]:
+
+        scores["H3"] += 4
+        scores["H4"] += 4
+
+        evidence.append(
+            "Kondisi atmosfer dikategorikan ekstrem."
+        )
+
+    # =========================================================
+    # E2. CURAH HUJAN
+    # =========================================================
+
+    if rain >= 100:
+
+        scores["H3"] += 3
+        scores["H4"] += 3
+
+        evidence.append(
+            f"Curah hujan sangat tinggi ({rain:.1f} mm)."
+        )
+
+    elif rain >= 50:
+
+        scores["H2"] += 2
+        scores["H3"] += 2
+
+        evidence.append(
+            f"Curah hujan tinggi ({rain:.1f} mm)."
+        )
+
+    elif rain >= 20:
+
+        scores["H2"] += 1
+
+        evidence.append(
+            f"Curah hujan berada pada tingkat sedang "
+            f"({rain:.1f} mm)."
+        )
+
+    else:
+
+        evidence.append(
+            f"Curah hujan rendah ({rain:.1f} mm)."
+        )
+
+    # =========================================================
+    # E3. KELEMBAPAN
+    # =========================================================
+
+    if rh >= 85:
+
+        scores["H2"] += 1
+
+        evidence.append(
+            f"Kelembapan tinggi ({rh:.0f}%)."
+        )
+
+    # =========================================================
+    # E4. ANGIN RATA-RATA
+    # =========================================================
+
+    if wind < 11:
+
+        scores["H1"] += 2
+
+        evidence.append(
+            f"Kecepatan angin rata-rata rendah "
+            f"({wind:.1f} knot)."
+        )
+
+    elif wind < 15:
+
+        scores["H2"] += 2
+
+        evidence.append(
+            f"Kecepatan angin rata-rata berada pada "
+            f"tingkat waspada ({wind:.1f} knot)."
+        )
+
+    else:
+
+        scores["H3"] += 4
+        scores["H4"] += 4
+
+        evidence.append(
+            f"Kecepatan angin rata-rata tinggi "
+            f"({wind:.1f} knot)."
+        )
+
+    # =========================================================
+    # E5. FFX / ANGIN MAKSIMUM
+    # =========================================================
+
+    if ffx == "sangat tinggi":
+
+        scores["H3"] += 4
+        scores["H4"] += 4
+
+        evidence.append(
+            "Kecepatan angin maksimum berada pada "
+            "kategori sangat tinggi."
+        )
+
+    elif ffx == "tinggi":
+
+        scores["H3"] += 3
+        scores["H4"] += 3
+
+        evidence.append(
+            "Kecepatan angin maksimum berada pada "
+            "kategori tinggi."
+        )
+
+    elif ffx == "sedang":
+
+        scores["H2"] += 1
+
+        evidence.append(
+            "Kecepatan angin maksimum berada pada "
+            "kategori sedang."
+        )
+
+    elif ffx == "rendah":
+
+        evidence.append(
+            "Kecepatan angin maksimum berada pada "
+            "kategori rendah."
+        )
+
+    # =========================================================
+    # E6. TINGGI GELOMBANG
+    # =========================================================
+
+    if wave <= 0.5:
+
+        scores["H1"] += 2
+
+        evidence.append(
+            f"Tinggi gelombang rendah ({wave:.2f} m)."
+        )
+
+    elif wave < 1.25:
+
+        scores["H2"] += 2
+
+        evidence.append(
+            f"Tinggi gelombang berada pada tingkat "
+            f"kewaspadaan ({wave:.2f} m)."
+        )
+
+    elif wave <= 2.5:
+
+        scores["H3"] += 4
+        scores["H4"] += 4
+
+        evidence.append(
+            f"Tinggi gelombang berada pada tingkat "
+            f"risiko meningkat ({wave:.2f} m)."
+        )
+
+    elif wave < 4:
+
+        scores["H3"] += 5
+        scores["H4"] += 5
+
+        evidence.append(
+            f"Tinggi gelombang sangat tinggi "
+            f"({wave:.2f} m)."
+        )
+
+    else:
+
+        scores["H3"] += 6
+        scores["H4"] += 6
+
+        evidence.append(
+            f"Tinggi gelombang ekstrem "
+            f"({wave:.2f} m)."
+        )
+
+    # =========================================================
+    # E7. BAHAYA LANGSUNG
+    # =========================================================
+
+    direct_hazard = False
+
+    if lightning is True:
+
+        direct_hazard = True
+
+        evidence.append(
+            "Potensi petir terdeteksi."
+        )
+
+    if visibility_bad is True:
+
+        direct_hazard = True
+
+        evidence.append(
+            "Visibilitas berada pada kondisi buruk."
+        )
+
+    if breaking_wave is True:
+
+        direct_hazard = True
+
+        evidence.append(
+            "Gelombang pecah terdeteksi."
+        )
+
+    if direct_hazard:
+
+        scores["H3"] += 5
+        scores["H4"] += 5
+
+        evidence.append(
+            "Bahaya langsung terdeteksi sehingga "
+            "risiko keselamatan meningkat."
+        )
+
+    # =========================================================
+    # E8. KOMBINASI ANGIN DAN GELOMBANG
+    # =========================================================
+
+    high_wind = wind >= 15
+    high_wave = wave >= 1.25
+
+    if high_wind and high_wave:
+
+        evidence.append(
+            "Kombinasi angin minimal 15 knot dan "
+            "gelombang minimal 1,25 m menunjukkan "
+            "risiko keselamatan tinggi."
+        )
+
+        if fisherman_status == "belum_berangkat":
+
+            scores["H3"] += 8
+
+        else:
+
+            scores["H4"] += 8
+
+    # =========================================================
+    # E9. KONDISI SUDAH MELAUT
+    # =========================================================
+
+    if fisherman_status == "sudah_melaut":
+
+        if high_wind:
+
+            scores["H4"] += 2
+
+        if high_wave:
+
+            scores["H4"] += 2
+
+        if direct_hazard:
+
             scores["H4"] += 5
 
-            evidence.append(
-                "Kondisi berbahaya saat nelayan sudah berada di laut."
-            )
+    # =========================================================
+    # E10. BATASI HIPOTESIS BERDASARKAN STATUS
+    # =========================================================
 
-    elif fisherman_status == "belum_berangkat":
+    if fisherman_status == "belum_berangkat":
 
-        kondisi_buruk = (
-            precipitation > 10
-            or wind_speed >= 10
-            or (wave_height is not None and wave_height >= 2.5)
-            or ffx_category == "tinggi"
-            or lightning is True
-            or breaking_wave is True
-        )
+        scores["H4"] = 0
 
-        if kondisi_buruk:
-            scores["H3"] += 2
+    else:
 
-            evidence.append(
-                "Kondisi tidak mendukung keberangkatan."
-            )
+        scores["H1"] = 0
+        scores["H3"] = 0
 
-    # =====================================================
-    # PEMILIHAN HIPOTESIS
-    # =====================================================
+    # =========================================================
+    # E11. PEMILIHAN HIPOTESIS
+    # =========================================================
 
     priority = {
         "H4": 4,
@@ -329,14 +501,58 @@ def calculate_reasoning(
     }
 
     selected_hypothesis = max(
-        scores,
-        key=lambda h: (scores[h], priority[h])
+        candidate_hypotheses,
+        key=lambda h: (
+            scores[h],
+            priority[h]
+        )
     )
+
+    # =========================================================
+    # E12. CONFIDENCE
+    # =========================================================
+
+    candidate_scores = [
+        scores[h]
+        for h in candidate_hypotheses
+    ]
+
+    total_score = sum(candidate_scores)
+
+    if total_score > 0:
+
+        confidence = (
+            scores[selected_hypothesis]
+            / total_score
+        ) * 100
+
+    else:
+
+        confidence = 0
+
+    # =========================================================
+    # RETURN
+    # =========================================================
 
     return {
         "hypothesis": selected_hypothesis,
-        "hypothesis_name": HYPOTHESES[selected_hypothesis]["name"],
-        "recommendation": HYPOTHESES[selected_hypothesis]["recommendation"],
+
+        "hypothesis_name": HYPOTHESES[
+            selected_hypothesis
+        ]["name"],
+
+        "recommendation": HYPOTHESES[
+            selected_hypothesis
+        ]["recommendation"],
+
         "scores": scores,
+
+        "candidate_hypotheses": candidate_hypotheses,
+
+        "confidence": round(
+            confidence,
+            2
+        ),
+
         "evidence": evidence
     }

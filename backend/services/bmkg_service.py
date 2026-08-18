@@ -1,4 +1,5 @@
 import os
+import math
 import requests
 from dotenv import load_dotenv
 
@@ -6,9 +7,44 @@ load_dotenv()
 
 BMKG_URL = "https://api.bmkg.go.id/publik/prakiraan-cuaca"
 
+BMKG_LOCATION_CATALOG = [
+    {
+        "name": "Kemayoran, Jakarta Pusat",
+        "adm4": "31.71.03.1001",
+        "maritime_code": "H.01",
+        "lat": -6.164721,
+        "lon": 106.845384
+    },
+    {
+        "name": "Bandung, Jawa Barat",
+        "adm4": "32.73.01.1001",
+        "maritime_code": "H.02",
+        "lat": -6.917464,
+        "lon": 107.619123
+    },
+    {
+        "name": "Surabaya, Jawa Timur",
+        "adm4": "35.74.01.1001",
+        "maritime_code": "H.03",
+        "lat": -7.257472,
+        "lon": 112.752090
+    },
+    {
+        "name": "Makassar, Sulawesi Selatan",
+        "adm4": "73.71.01.1001",
+        "maritime_code": "H.04",
+        "lat": -5.147665,
+        "lon": 119.432732
+    }
+]
 
-def get_weather_data():
-    adm4 = os.getenv("BMKG_ADM4", "31.71.03.1001")
+
+def get_bmkg_location_catalog():
+    return BMKG_LOCATION_CATALOG
+
+
+def get_weather_data(adm4=None):
+    adm4 = adm4 or os.getenv("BMKG_ADM4", "31.71.03.1001")
 
     params = {
         "adm4": adm4
@@ -34,6 +70,41 @@ def get_weather_data():
     except Exception as e:
         print(f"Error memproses data BMKG: {e}")
         return None
+
+
+def find_nearest_location(lat, lon):
+    try:
+        lat = float(lat)
+        lon = float(lon)
+    except (TypeError, ValueError):
+        return None
+
+    def haversine(a_lat, a_lon, b_lat, b_lon):
+        radius = 6371
+        d_lat = math.radians(b_lat - a_lat)
+        d_lon = math.radians(b_lon - a_lon)
+        a1 = (
+            math.sin(d_lat / 2) ** 2
+            + math.cos(math.radians(a_lat))
+            * math.cos(math.radians(b_lat))
+            * math.sin(d_lon / 2) ** 2
+        )
+        return 2 * radius * math.asin(math.sqrt(a1))
+
+    nearest = None
+    nearest_distance = None
+
+    for option in BMKG_LOCATION_CATALOG:
+        distance = haversine(lat, lon, option["lat"], option["lon"])
+        if nearest_distance is None or distance < nearest_distance:
+            nearest = option
+            nearest_distance = distance
+
+    if nearest is None:
+        return None
+
+    nearest["distance_km"] = round(nearest_distance, 2)
+    return nearest
 
 
 def normalize_weather_data(data):
